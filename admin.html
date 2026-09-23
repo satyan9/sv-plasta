@@ -1637,9 +1637,9 @@
               date: dateStr
             }));
 
-            if (window.SVCloud && window.SVCloud.isConfigured()) {
+            if (window.SVCloud) {
               const res = await window.SVCloud.addItems('gallery', newItems);
-              if (res.success) {
+              if (res && res.success) {
                 showToast(`✅ ${newItems.length} photos published to Gallery!`, true);
                 senderForm.reset();
                 selectedGalleryFiles = [];
@@ -1650,28 +1650,31 @@
               }
             }
 
-            // Fallback to local server API
-            const formData = new FormData();
-            formData.append('section', 'gallery');
-            formData.append('title', title);
-            formData.append('location', locationVal);
-            selectedGalleryFiles.forEach(f => formData.append('photos', f));
+            // Fallback to local server API if running on localhost
+            if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+              const formData = new FormData();
+              formData.append('section', 'gallery');
+              formData.append('title', title);
+              formData.append('location', locationVal);
+              selectedGalleryFiles.forEach(f => formData.append('photos', f));
 
-            const response = await fetch('/api/media/add', {
-              method: 'POST',
-              body: formData
-            });
-            const result = await response.json();
-            if (result.success) {
-              showToast(result.message || `✅ ${selectedGalleryFiles.length} photos published!`, true);
-              senderForm.reset();
-              selectedGalleryFiles = [];
-              renderMultiPreviews();
-              fetchLiveItems();
-              setTimeout(() => { btnViewManage?.click(); }, 800);
-            } else {
-              showToast(result.message || 'Please connect Cloud Hub to publish.', false);
+              const response = await fetch('/api/media/add', {
+                method: 'POST',
+                body: formData
+              });
+              const result = await response.json();
+              if (result && result.success) {
+                showToast(result.message || `✅ ${selectedGalleryFiles.length} photos published!`, true);
+                senderForm.reset();
+                selectedGalleryFiles = [];
+                renderMultiPreviews();
+                fetchLiveItems();
+                setTimeout(() => { btnViewManage?.click(); }, 800);
+                return;
+              }
             }
+
+            showToast('Notice: Could not publish photos to cloud.', false);
           } catch (err) {
             console.error('Batch upload error:', err);
             showToast('Error uploading photos. Please check file sizes.', false);
@@ -1718,9 +1721,9 @@
         };
 
         try {
-          if (window.SVCloud && window.SVCloud.isConfigured()) {
+          if (window.SVCloud) {
             const result = await window.SVCloud.addItem(sec, newItem);
-            if (result.success) {
+            if (result && result.success) {
               showToast('✅ Published to Centralized Cloud Hub!', true);
               senderForm.reset();
               previewBox.style.display = 'none';
@@ -1733,24 +1736,27 @@
           }
 
           // Fallback: try local server API if running local Node server
-          const formData = new FormData(senderForm);
-          const response = await fetch('/api/media/add', {
-            method: 'POST',
-            body: formData
-          });
-          const result = await response.json();
+          if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+            const formData = new FormData(senderForm);
+            const response = await fetch('/api/media/add', {
+              method: 'POST',
+              body: formData
+            });
+            const result = await response.json();
 
-          if (result.success) {
-            showToast(result.message || '✅ Published successfully to SV PLAST!', true);
-            senderForm.reset();
-            previewBox.style.display = 'none';
-            selectedGalleryFiles = [];
-            renderMultiPreviews();
-            fetchLiveItems();
-            setTimeout(() => { btnViewManage?.click(); }, 800);
-          } else {
-            showToast(result.message || 'Please connect Cloud Hub to publish.', false);
+            if (result && result.success) {
+              showToast(result.message || '✅ Published successfully to SV PLAST!', true);
+              senderForm.reset();
+              previewBox.style.display = 'none';
+              selectedGalleryFiles = [];
+              renderMultiPreviews();
+              fetchLiveItems();
+              setTimeout(() => { btnViewManage?.click(); }, 800);
+              return;
+            }
           }
+
+          showToast('Notice: Could not publish item to cloud.', false);
         } catch (err) {
           console.error(err);
           showToast('Notice: Please connect Cloud Hub to sync across all devices.', false);
@@ -1897,9 +1903,9 @@
 
         try {
           // Centralized Cloud Deletion: permanent and immediate across all profiles
-          if (window.SVCloud && window.SVCloud.isConfigured()) {
+          if (window.SVCloud) {
             const res = await window.SVCloud.deleteItem(sec, id);
-            if (res.success) {
+            if (res && res.success) {
               deleteModal.style.display = 'none';
               showToast('🗑️ Deleted permanently across all devices!', true);
               fetchLiveItems();
@@ -1908,16 +1914,22 @@
           }
 
           // Fallback to local server API if running local Node server
-          const deleteUrl = `/api/media/delete?section=${encodeURIComponent(sec)}&id=${encodeURIComponent(id)}`;
-          let res = await fetch(deleteUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ section: sec, id: id })
-          });
+          if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+            const deleteUrl = `/api/media/delete?section=${encodeURIComponent(sec)}&id=${encodeURIComponent(id)}`;
+            let res = await fetch(deleteUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ section: sec, id: id })
+            });
+            if (res.ok) {
+              deleteModal.style.display = 'none';
+              showToast('✅ Item deleted from server.', true);
+              fetchLiveItems();
+              return;
+            }
+          }
 
-          deleteModal.style.display = 'none';
-          showToast('✅ Item deleted from server.', true);
-          fetchLiveItems();
+          showToast('Notice: Could not delete item from cloud.', false);
         } catch (err) {
           console.error('Delete error:', err);
           showToast('Notice: Please connect Cloud Hub for multi-device deletion.', false);
@@ -2056,18 +2068,29 @@
         renderManageItems(currentRawData);
 
         try {
-          if (window.SVCloud && window.SVCloud.isConfigured()) {
-            await window.SVCloud.updateOrder(sec, items);
-            showToast(`↕️ ${sec.toUpperCase()} order updated and saved!`, true);
-          } else {
-            // Local fallback
-            await fetch('/api/media/order', {
+          if (window.SVCloud) {
+            const res = await window.SVCloud.updateOrder(sec, items);
+            if (res && res.success) {
+              showToast(`↕️ ${sec.toUpperCase()} order updated and saved!`, true);
+              return;
+            }
+          }
+
+          // Local fallback only if running on local Node server
+          if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+            const res = await fetch('/api/media/order', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ section: sec, items: items })
             });
-            showToast(`↕️ Order updated.`, true);
+            const data = await res.json();
+            if (data && data.success) {
+              showToast(`↕️ Order updated.`, true);
+              return;
+            }
           }
+
+          showToast('Notice: Could not save order to cloud.', false);
         } catch (err) {
           console.error('Failed to save order:', err);
           showToast('Notice: Could not save order to cloud.', false);
